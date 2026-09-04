@@ -1,0 +1,62 @@
+name: Sync from focx
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-from-focx
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM_RAW: https://raw.githubusercontent.com/ryanphillipthomas/focx/develop
+      SYNC_BRANCH: sync/focx-develop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download canonical files
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location "$UPSTREAM_RAW/action.yml" --output action.yml
+          curl --fail --silent --show-error --location "$UPSTREAM_RAW/tools/drift-check/index.mjs" --output tools/drift-check/index.mjs
+          curl --fail --silent --show-error --location "$UPSTREAM_RAW/tools/drift-check/README.md" --output README.md
+          curl --fail --silent --show-error --location "$UPSTREAM_RAW/tools/drift-check/verification.md" --output verification.md
+
+      - name: Open or update sync pull request
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- action.yml README.md verification.md tools/drift-check/index.mjs; then
+            echo "Standalone action matches focx/develop."
+            exit 0
+          fi
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git switch -C "$SYNC_BRANCH"
+          git add action.yml README.md verification.md tools/drift-check/index.mjs
+          git commit -m "chore: sync drift-check from focx/develop"
+          git push --force-with-lease origin "HEAD:$SYNC_BRANCH"
+
+          pr_number="$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" \
+              --title "chore: sync drift-check from focx/develop" \
+              --body "Automated parity update from the canonical drift-check files on focx/develop. Merging this PR republishes the floating v1 tag."
+          else
+            gh pr create \
+              --base main \
+              --head "$SYNC_BRANCH" \
+              --title "chore: sync drift-check from focx/develop" \
+              --body "Automated parity update from the canonical drift-check files on focx/develop. Merging this PR republishes the floating v1 tag."
+          fi
