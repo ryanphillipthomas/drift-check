@@ -1,5 +1,5 @@
 name: Drift Check
-description: Block design drift by finding raw visual values and invalid token-layer overrides.
+description: "DEPRECATED — use ryanphillipthomas/ryanthomas-tools. Blocks design drift (raw visual values + invalid token overrides)."
 author: focx
 
 inputs:
